@@ -1,12 +1,13 @@
+// Controllers/AuthController.cs
+
 using BookingSports.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.IdentityModel.Tokens;
-using Microsoft.EntityFrameworkCore;
-using BookingSports.Data;
 
 namespace BookingSports.Controllers
 {
@@ -18,14 +19,17 @@ namespace BookingSports.Controllers
         private readonly SignInManager<User> _signInManager;
         private readonly IConfiguration _configuration;
 
-        public AuthController(UserManager<User> userManager, SignInManager<User> signInManager, IConfiguration configuration)
+        public AuthController(
+            UserManager<User> userManager,
+            SignInManager<User> signInManager,
+            IConfiguration configuration)
         {
-            _userManager = userManager;
+            _userManager   = userManager;
             _signInManager = signInManager;
             _configuration = configuration;
         }
 
-        // Регистрация
+        // POST api/auth/register
         [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterModel model)
         {
@@ -34,46 +38,31 @@ namespace BookingSports.Controllers
 
             var user = new User
             {
-                UserName = model.Email,
-                Email = model.Email,
+                UserName  = model.Email,
+                Email     = model.Email,
                 FirstName = model.FirstName,
-                LastName = model.LastName,
-                City = model.City
+                LastName  = model.LastName,
+                City      = model.City
             };
 
-            var existingUser = await _userManager.FindByEmailAsync(model.Email);
-            if (existingUser != null)
-                return BadRequest(new { message = "Пользователь с таким email уже существует." });
-
+            if (await _userManager.FindByEmailAsync(model.Email) != null)
+                return BadRequest(new { message = "РџРѕР»СЊР·РѕРІР°С‚РµР»СЊ СЃ С‚Р°РєРёРј email СѓР¶Рµ СЃСѓС‰РµСЃС‚РІСѓРµС‚." });
 
             var result = await _userManager.CreateAsync(user, model.Password);
             if (!result.Succeeded)
                 return BadRequest(result.Errors);
 
-
-
-            // Назначаем роль после успешной регистрации
-            var role = model.Role;
-
-            if (string.IsNullOrEmpty(model.Role))
-            {
-                model.Role = "User"; // или другая роль по умолчанию
-            }
-
-            if (role == "Admin" || role == "Coach" || role == "SportFacility" || role == "User")
-            {
+            // РџСЂРёСЃРІР°РёРІР°РµРј СЂРѕР»СЊ (РїРѕ СѓРјРѕР»С‡Р°РЅРёСЋ вЂ” User)
+            var role = string.IsNullOrEmpty(model.Role) ? "User" : model.Role;
+            if (new[] { "Admin", "Coach", "SportFacility", "User" }.Contains(role))
                 await _userManager.AddToRoleAsync(user, role);
-            }
             else
-            {
-                return BadRequest(new { message = "Недопустимая роль!" });
-            }
+                return BadRequest(new { message = "РќРµРІРµСЂРЅР°СЏ СЂРѕР»СЊ!" });
 
-            return Ok(new { message = "Регистрация успешна!" });
+            return Ok(new { message = "Р РµРіРёСЃС‚СЂР°С†РёСЏ РїСЂРѕС€Р»Р° СѓСЃРїРµС€РЅРѕ!" });
         }
 
-
-        // Вход
+        // POST api/auth/login
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginModel model)
         {
@@ -82,27 +71,41 @@ namespace BookingSports.Controllers
 
             var user = await _userManager.FindByEmailAsync(model.Email);
             if (user == null)
-                return Unauthorized("Неверный логин или пароль.");
+                return Unauthorized("РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ.");
 
             var result = await _signInManager.PasswordSignInAsync(user, model.Password, false, false);
             if (!result.Succeeded)
-                return Unauthorized("Неверный логин или пароль.");
+                return Unauthorized("РќРµРІРµСЂРЅС‹Р№ Р»РѕРіРёРЅ РёР»Рё РїР°СЂРѕР»СЊ.");
 
+            // Р“РµРЅРµСЂР°С†РёСЏ JWT
             var token = GenerateJwtToken(user);
-            return Ok(new { token });
+
+            // РџРѕР»СѓС‡Р°РµРј СЃРїРёСЃРѕРє СЂРѕР»РµР№ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ
+            var roles = await _userManager.GetRolesAsync(user);
+
+            // Р’РѕР·РІСЂР°С‰Р°РµРј С‚РѕРєРµРЅ + РґР°РЅРЅС‹Рµ РїРѕР»СЊР·РѕРІР°С‚РµР»СЏ + СЂРѕР»Рё
+            return Ok(new
+            {
+                token,
+                firstName = user.FirstName,
+                lastName  = user.LastName,
+                city      = user.City,
+                email     = user.Email,
+                roles     // <-- РІРѕС‚ Р·РґРµСЃСЊ
+            });
         }
 
-        // Получение текущего пользователя
-        [HttpGet("me")]
+        // GET api/auth/me
+        [HttpGet("me"), Authorize]
         public async Task<IActionResult> GetCurrentUser()
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (userId == null)
-                return Unauthorized();
+            if (userId == null) return Unauthorized();
 
             var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-                return NotFound();
+            if (user == null) return NotFound();
+
+            var roles = await _userManager.GetRolesAsync(user);
 
             return Ok(new
             {
@@ -110,57 +113,55 @@ namespace BookingSports.Controllers
                 user.FirstName,
                 user.LastName,
                 user.Email,
-                user.City
+                user.City,
+                roles     // <-- Рё Р·РґРµСЃСЊ
             });
         }
 
-        [HttpPut("me")]
+        // PUT api/auth/me
+        [HttpPut("me"), Authorize]
         public async Task<IActionResult> UpdateUser([FromBody] User model)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (userId == null)
-                return Unauthorized();
+            if (userId == null) return Unauthorized();
 
             var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-                return NotFound();
+            if (user == null) return NotFound();
 
             user.FirstName = model.FirstName ?? user.FirstName;
-            user.LastName = model.LastName ?? user.LastName;
-            user.City = model.City ?? user.City;
+            user.LastName  = model.LastName  ?? user.LastName;
+            user.City      = model.City      ?? user.City;
 
             var result = await _userManager.UpdateAsync(user);
             if (!result.Succeeded)
                 return BadRequest(result.Errors);
 
-            return Ok(new { message = "Данные обновлены!" });
+            return Ok(new { message = "РџСЂРѕС„РёР»СЊ РѕР±РЅРѕРІР»С‘РЅ!" });
         }
 
-        // Генерация JWT-токена
+        // Р’СЃРїРѕРјРѕРіР°С‚РµР»СЊРЅС‹Р№ РјРµС‚РѕРґ РіРµРЅРµСЂР°С†РёРё JWT
         private string GenerateJwtToken(User user)
         {
-            var claims = new[]
+            var claims = new List<Claim>
             {
-        new Claim(JwtRegisteredClaimNames.Sub, user.Id.ToString()),
-        new Claim(JwtRegisteredClaimNames.Email, user.Email ?? string.Empty),
-        new Claim(ClaimTypes.Name, user.UserName ?? string.Empty),
-        new Claim(ClaimTypes.NameIdentifier, user.Id.ToString())
-    };
+                new Claim(JwtRegisteredClaimNames.Sub, user.Id),
+                new Claim(JwtRegisteredClaimNames.Email, user.Email ?? ""),
+                new Claim(ClaimTypes.Name, user.UserName ?? ""),
+                new Claim(ClaimTypes.NameIdentifier, user.Id)
+            };
 
             var roles = _userManager.GetRolesAsync(user).Result;
             foreach (var role in roles)
-            {
-                claims = claims.Append(new Claim(ClaimTypes.Role, role)).ToArray();
-            }
+                claims.Add(new Claim(ClaimTypes.Role, role));
 
-            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"] ?? "default_secret_key"));
+            var key   = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_configuration["Jwt:Key"]!));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
             var token = new JwtSecurityToken(
-                issuer: _configuration["Jwt:Issuer"],
-                audience: _configuration["Jwt:Audience"],
-                claims: claims,
-                expires: DateTime.UtcNow.AddHours(3),
+                issuer:            _configuration["Jwt:Issuer"],
+                audience:          _configuration["Jwt:Audience"],
+                claims:            claims,
+                expires:           DateTime.UtcNow.AddHours(3),
                 signingCredentials: creds
             );
 
@@ -168,4 +169,3 @@ namespace BookingSports.Controllers
         }
     }
 }
-

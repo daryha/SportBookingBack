@@ -1,52 +1,41 @@
-using BookingSports.Models;
+// Services/FavoriteService.cs
 using BookingSports.Data;
+using BookingSports.Models;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace BookingSports.Services
 {
-    public interface IFavoriteService
-    {
-        Task<IEnumerable<Favorite>> GetAllFavoritesAsync();
-        Task<Favorite> AddToFavoritesAsync(Favorite favorite);
-        Task<bool> RemoveFromFavoritesAsync(string id);
-    }
-
     public class FavoriteService : IFavoriteService
     {
-        private readonly ApplicationDbContext _context;
+        private readonly ApplicationDbContext _db;
+        public FavoriteService(ApplicationDbContext db) => _db = db;
 
-        public FavoriteService(ApplicationDbContext context)
-        {
-            _context = context;
-        }
-
-        // Получить все избранные элементы пользователя
         public async Task<IEnumerable<Favorite>> GetAllFavoritesAsync()
         {
-            return await _context.Favorites.ToListAsync();
+            return await _db.Favorites
+                .Include(f => f.User)
+                .Include(f => f.Coach)
+                .Include(f => f.SportFacility)
+                .ToListAsync();
         }
 
-        // Добавить объект в избранное
         public async Task<Favorite> AddToFavoritesAsync(Favorite favorite)
         {
-            _context.Favorites.Add(favorite);
-            await _context.SaveChangesAsync();
+            favorite.Id = Guid.NewGuid().ToString();
+            _db.Favorites.Add(favorite);
+            await _db.SaveChangesAsync();
             return favorite;
         }
 
-        // Удалить объект из избранного
         public async Task<bool> RemoveFromFavoritesAsync(string id)
         {
-            var favorite = await _context.Favorites.FindAsync(id);
-            if (favorite == null)
-            {
-                return false;
-            }
-
-            _context.Favorites.Remove(favorite);
-            await _context.SaveChangesAsync();
+            var f = await _db.Favorites.FindAsync(id);
+            if (f == null) return false;
+            _db.Favorites.Remove(f);
+            await _db.SaveChangesAsync();
             return true;
         }
     }

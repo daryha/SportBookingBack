@@ -1,3 +1,4 @@
+// Controllers/FavoriteController.cs
 using BookingSports.Models;
 using BookingSports.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -10,39 +11,22 @@ namespace BookingSports.Controllers
     [ApiController]
     public class FavoriteController : ControllerBase
     {
-        private readonly IFavoriteService _favoriteService;
+        private readonly IFavoriteService _svc;
+        public FavoriteController(IFavoriteService svc) => _svc = svc;
 
-        public FavoriteController(IFavoriteService favoriteService)
-        {
-            _favoriteService = favoriteService;
-        }
-
-        // Получить все избранные элементы пользователя
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Favorite>>> GetFavorites()
-        {
-            var favorites = await _favoriteService.GetAllFavoritesAsync();
-            return Ok(favorites);
-        }
+        public async Task<ActionResult<IEnumerable<Favorite>>> GetFavorites() =>
+            Ok(await _svc.GetAllFavoritesAsync());
 
-        // Добавить объект в избранное
         [HttpPost]
-        public async Task<ActionResult<Favorite>> AddToFavorites([FromBody] Favorite favorite)
+        public async Task<ActionResult<Favorite>> AddToFavorites([FromBody] Favorite fav)
         {
-            var addedFavorite = await _favoriteService.AddToFavoritesAsync(favorite);
-            return CreatedAtAction(nameof(GetFavorites), new { id = addedFavorite.Id }, addedFavorite);
+            var created = await _svc.AddToFavoritesAsync(fav);
+            return CreatedAtAction(nameof(GetFavorites), new { id = created.Id }, created);
         }
 
-        // Удалить объект из избранного
         [HttpDelete("{id}")]
-        public async Task<ActionResult> RemoveFromFavorites(string id)
-        {
-            var success = await _favoriteService.RemoveFromFavoritesAsync(id);
-            if (!success)
-            {
-                return NotFound();
-            }
-            return NoContent();
-        }
+        public async Task<IActionResult> RemoveFromFavorites(string id) =>
+            await _svc.RemoveFromFavoritesAsync(id) ? NoContent() : NotFound();
     }
 }

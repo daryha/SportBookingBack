@@ -1,20 +1,29 @@
-using BookingSports.Models;
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace BookingSports.Models
 {
     public class Review
     {
-        public string Id { get; set; }
-        public string UserId { get; set; } // ID пользователя, который оставил отзыв
-        public User User { get; set; }
+        public string Id { get; set; } = Guid.NewGuid().ToString();
 
-        public string? CoachId { get; set; } // ID тренера (если оценивают тренера)
-        public Coach Coach { get; set; }
+        public string UserId { get; set; }
+        [JsonIgnore]
+        public User? User { get; set; }
 
-        public string? SportFacilityId { get; set; } // ID площадки (если оценивают площадку)
-        public SportFacility SportFacility { get; set; }
+        public string? CoachId { get; set; }
+        [JsonIgnore]
+        public Coach? Coach { get; set; }
 
-        public int Score { get; set; } // Оценка (1-5)
-        public string Comment { get; set; } // Комментарий
+        public string? SportFacilityId { get; set; }
+        [JsonIgnore]
+        public SportFacility? SportFacility { get; set; }
+
+        public int Score { get; set; }
+        public string Comment { get; set; } = "";
+
+        public DateTime CreatedAt { get; set; }    // <вЂ” СЃСЋРґР° Р·Р°РїРёСЃС‹РІР°РµРј РІСЂРµРјСЏ
     }
 }

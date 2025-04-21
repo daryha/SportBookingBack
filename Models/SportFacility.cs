@@ -1,23 +1,45 @@
-using BookingSports.Models;
+// Models/SportFacility.cs
+using System;
+using System.Collections.Generic;
+using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace BookingSports.Models
 {
     public class SportFacility
     {
-        public string Id { get; set; }
-        public string Name { get; set; }        // Название
-        public string Photo { get; set; }
-        public string Address { get; set; }     // Адрес
-        public string PhotoUrl { get; set; }    // Фото
-        public string Description { get; set; } // Описание
-        public decimal Price { get; set; }      // Цена за 2 часа
+        public string Id { get; set; } = Guid.NewGuid().ToString();
 
-        // График работы (список доступных дат и времени)
-        public List<Schedule> Schedule { get; set; } = new();
-        public ICollection<Schedule> Schedules { get; set; } = new List<Schedule>();
+        // Р±Р°Р·РѕРІС‹Рµ РїРѕР»СЏ
+        public string Name        { get; set; }
+        public string PhotoUrl    { get; set; }    // РѕСЃС‚Р°РІР»СЏРµРј С‚РѕР»СЊРєРѕ URL
+        public string Address     { get; set; }
+        public string Description { get; set; }
+        public decimal Price      { get; set; }
 
+        // СѓРґРѕР±СЃС‚РІР°
+        public bool HasLockerRooms { get; set; }
+        public bool HasStands      { get; set; }
+        public bool HasShower      { get; set; }
+        public bool HasLighting    { get; set; }
+        public bool HasParking     { get; set; }
+        public bool HasEquipment   { get; set; }
 
-        // Оценки площадки
-        public List<Review> Reviews { get; set; } = new();
+        // РІРјРµСЃС‚РёРјРѕСЃС‚СЊ Рё СЂР°Р·РјРµСЂС‹
+        public int Capacity    { get; set; }
+        public decimal Length  { get; set; }
+        public decimal Width   { get; set; }
+        public decimal Height  { get; set; }
+
+        // РїРѕРєСЂС‹С‚РёРµ
+        public string SurfaceType { get; set; }
+
+        // С‚РёРїС‹ СЃРїРѕСЂС‚Р° (РјР°СЃСЃРёРІ СЃС‚СЂРѕРє)
+        [Column(TypeName = "text[]")]
+        public string[] SportTypes { get; set; } = Array.Empty<string>();
+
+        // РЅР°РІРёРіР°С†РёРѕРЅРЅС‹Рµ СЃРІРѕР№СЃС‚РІР° вЂ” РЅРµ РІРєР»СЋС‡Р°РµРј РІ JSON
+        [JsonIgnore] public List<Schedule> Schedules { get; set; } = new();
+        [JsonIgnore] public List<Review>   Reviews   { get; set; } = new();
     }
 }

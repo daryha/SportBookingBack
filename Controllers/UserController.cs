@@ -1,60 +1,64 @@
+// Controllers/UserController.cs
 using BookingSports.Models;
 using BookingSports.Services;
-using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Threading.Tasks;
 using System.Security.Claims;
-
+using System.Threading.Tasks;
 
 namespace BookingSports.Controllers
 {
+    [Authorize]
     [Route("api/users")]
     [ApiController]
     public class UserController : ControllerBase
     {
-        private readonly UserManager<User> _userManager;
+        private readonly IUserService _svc;
 
-        public UserController(UserManager<User> userManager)
+        public UserController(IUserService svc)
         {
-            _userManager = userManager;
+            _svc = svc;
         }
 
-        // Получить данные текущего пользователя
+        // GET api/users/me
         [HttpGet("me")]
-        public async Task<ActionResult<User>> GetCurrentUser()
+        public async Task<IActionResult> GetCurrentUser()
         {
-            var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
-            if (userId == null)
-                return Unauthorized();
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-                return NotFound();
+            var user  = await _svc.GetUserByIdAsync(userId);
+            if (user == null) return NotFound();
 
-            return Ok(user);
+            var roles = await _svc.GetUserRolesAsync(userId);
+            return Ok(new
+            {
+                user.Id,
+                user.FirstName,
+                user.LastName,
+                user.Email,
+                user.City,
+                Roles = roles
+            });
         }
 
-        // Обновить данные текущего пользователя
+        // PUT api/users/me
         [HttpPut("me")]
-        public async Task<ActionResult> UpdateUser([FromBody] User model)
+        public async Task<IActionResult> UpdateCurrentUser([FromBody] User model)
         {
-            var userId = User.FindFirstValue(System.Security.Claims.ClaimTypes.NameIdentifier);
-            if (userId == null)
-                return Unauthorized();
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrEmpty(userId)) return Unauthorized();
 
-            var user = await _userManager.FindByIdAsync(userId);
-            if (user == null)
-                return NotFound();
+            var updated = await _svc.UpdateUserAsync(userId, model);
+            if (updated == null) return BadRequest(new { message = "РќРµ СѓРґР°Р»РѕСЃСЊ РѕР±РЅРѕРІРёС‚СЊ РїСЂРѕС„РёР»СЊ" });
 
-            user.FirstName = model.FirstName ?? user.FirstName;
-            user.LastName = model.LastName ?? user.LastName;
-            user.City = model.City ?? user.City;
-
-            var result = await _userManager.UpdateAsync(user);
-            if (!result.Succeeded)
-                return BadRequest(result.Errors);
-
-            return Ok(new { message = "Данные обновлены!" });
+            return Ok(updated);
         }
+
+        // GET api/users (Admin only)
+        [Authorize(Roles = "Admin")]
+        [HttpGet]
+        public async Task<IActionResult> GetAllUsers() =>
+            Ok(await _svc.GetAllUsersAsync());
     }
 }

@@ -1,8 +1,13 @@
+// Controllers/ReviewController.cs
 using BookingSports.Models;
-using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using BookingSports.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
+using System.Collections.Generic;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace BookingSports.Controllers
 {
@@ -10,92 +15,116 @@ namespace BookingSports.Controllers
     [ApiController]
     public class ReviewController : ControllerBase
     {
-        private readonly IReviewService _reviewService;
+        private readonly IReviewService _svc;
+        public ReviewController(IReviewService svc) => _svc = svc;
 
-        public ReviewController(IReviewService reviewService)
-        {
-            _reviewService = reviewService;
-        }
-
-        // Получить все отзывы
-        [HttpGet]
-        public async Task<ActionResult<IEnumerable<Review>>> GetAllReviews()
-        {
-            var reviews = await _reviewService.GetAllReviewsAsync();
-            return Ok(reviews);
-        }
-
-        // Получить отзывы для тренера
+        // GET /api/review/coach/{coachId}
         [HttpGet("coach/{coachId}")]
-        public async Task<ActionResult<IEnumerable<Review>>> GetReviewsForCoach(string coachId)
+        public async Task<ActionResult<IEnumerable<ReviewDto>>> GetForCoach(string coachId)
         {
-            var reviews = await _reviewService.GetReviewsForCoachAsync(coachId);
-            if (reviews == null)
-            {
-                return NotFound(new { message = "Отзывы не найдены" });
-            }
-            return Ok(reviews);
+            var list = await _svc.GetReviewsForCoachAsync(coachId);
+            return Ok(list.Select(ToDto));
         }
 
-        // Получить отзывы для спортивной площадки
+        // GET /api/review/facility/{facilityId}
         [HttpGet("facility/{facilityId}")]
-        public async Task<ActionResult<IEnumerable<Review>>> GetReviewsForFacility(string facilityId)
+        public async Task<ActionResult<IEnumerable<ReviewDto>>> GetForFacility(string facilityId)
         {
-            var reviews = await _reviewService.GetReviewsForFacilityAsync(facilityId);
-            if (reviews == null)
-            {
-                return NotFound(new { message = "Отзывы не найдены" });
-            }
-            return Ok(reviews);
+            var list = await _svc.GetReviewsForFacilityAsync(facilityId);
+            return Ok(list.Select(ToDto));
         }
 
-        // Создать новый отзыв
-        [HttpPost]
-        public async Task<ActionResult<Review>> CreateReview([FromBody] Review model)
+        // POST /api/review/coach/{coachId}
+        [HttpPost("coach/{coachId}")]
+        public async Task<ActionResult<ReviewDto>> CreateForCoach(string coachId, [FromBody] Review model)
         {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId == null) return Unauthorized();
+
+            model.Id                = Guid.NewGuid().ToString();
+            model.UserId            = userId;
+            model.CoachId           = coachId;
+            model.SportFacilityId   = null;
+
             if (model.Score < 1 || model.Score > 5)
-            {
-                return BadRequest(new { message = "Оценка должна быть от 1 до 5" });
-            }
+                return BadRequest(new { message = "Score must be between 1 and 5." });
 
-            var createdReview = await _reviewService.CreateReviewAsync(model);
-            return CreatedAtAction(nameof(GetReviewById), new { id = createdReview.Id }, createdReview);
+            try
+            {
+                await _svc.CreateReviewAsync(model);
+                // РїРѕРІС‚РѕСЂРЅРѕ С‡РёС‚Р°РµРј СЃ Includes
+                var full = await _svc.GetReviewByIdAsync(model.Id);
+                return CreatedAtAction(nameof(GetForCoach),
+                    new { coachId },
+                    ToDto(full!));
+            }
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg && pg.SqlState == "23505")
+            {
+                return Conflict(new { message = "Р’С‹ СѓР¶Рµ РѕСЃС‚Р°РІРёР»Рё РѕС‚Р·С‹РІ РґР»СЏ СЌС‚РѕРіРѕ С‚СЂРµРЅРµСЂР°." });
+            }
         }
 
-        // Получить отзыв по ID
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Review>> GetReviewById(string id)
+        // POST /api/review/facility/{facilityId}
+        [HttpPost("facility/{facilityId}")]
+        public async Task<ActionResult<ReviewDto>> CreateForFacility(string facilityId, [FromBody] Review model)
         {
-            var review = await _reviewService.GetReviewByIdAsync(id);
-            if (review == null)
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId == null) return Unauthorized();
+
+            model.Id                = Guid.NewGuid().ToString();
+            model.UserId            = userId;
+            model.SportFacilityId   = facilityId;
+            model.CoachId           = null;
+
+            if (model.Score < 1 || model.Score > 5)
+                return BadRequest(new { message = "Score must be between 1 and 5." });
+
+            try
             {
-                return NotFound();
+                await _svc.CreateReviewAsync(model);
+                var full = await _svc.GetReviewByIdAsync(model.Id);
+                return CreatedAtAction(nameof(GetForFacility),
+                    new { facilityId },
+                    ToDto(full!));
             }
-            return Ok(review);
+            catch (DbUpdateException ex) when (ex.InnerException is PostgresException pg && pg.SqlState == "23505")
+            {
+                return Conflict(new { message = "Р’С‹ СѓР¶Рµ РѕСЃС‚Р°РІРёР»Рё РѕС‚Р·С‹РІ РґР»СЏ СЌС‚РѕР№ РїР»РѕС‰Р°РґРєРё." });
+            }
         }
 
-        // Обновить отзыв
+        // PUT /api/review/{id}
         [HttpPut("{id}")]
-        public async Task<ActionResult<Review>> UpdateReview(string id, [FromBody] Review model)
+        public async Task<ActionResult<ReviewDto>> Update(string id, [FromBody] Review model)
         {
-            var updatedReview = await _reviewService.UpdateReviewAsync(id, model);
-            if (updatedReview == null)
-            {
-                return NotFound();
-            }
-            return Ok(updatedReview);
+            var updated = await _svc.UpdateReviewAsync(id, model);
+            if (updated == null) return NotFound();
+
+            // СЃРЅРѕРІР° РїРѕРґРіСЂСѓР¶Р°РµРј РЅР°РІРёРіР°С†РёСЋ
+            var full = await _svc.GetReviewByIdAsync(id);
+            return Ok(ToDto(full!));
         }
 
-        // Удалить отзыв
+        // DELETE /api/review/{id}
         [HttpDelete("{id}")]
-        public async Task<ActionResult> DeleteReview(string id)
+        public async Task<IActionResult> Delete(string id) =>
+            await _svc.DeleteReviewAsync(id) ? NoContent() : NotFound();
+
+        // РњР°РїРїРёРЅРі Review в†’ ReviewDto
+        private static ReviewDto ToDto(Review r) => new()
         {
-            var success = await _reviewService.DeleteReviewAsync(id);
-            if (!success)
-            {
-                return NotFound();
-            }
-            return NoContent();
-        }
+            Id             = r.Id,
+            UserId         = r.UserId,
+            UserName       = $"{r.User?.FirstName ?? ""} {r.User?.LastName ?? ""}".Trim(),
+            CreatedAt      = r.CreatedAt,
+            Score          = r.Score,
+            Comment        = r.Comment,
+            CoachId        = r.CoachId,
+            CoachName      = r.Coach is not null
+                                ? $"{r.Coach.FirstName} {r.Coach.LastName}"
+                                : null,
+            FacilityId     = r.SportFacilityId,
+            FacilityName   = r.SportFacility?.Name
+        };
     }
 }

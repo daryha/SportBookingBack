@@ -1,22 +1,22 @@
-using BookingSports.Models;
+using System;
 
 namespace BookingSports.Models
 {
     public class Booking
     {
-        public string Id { get; set; } // Идентификатор бронирования
-        public string UserId { get; set; } // ID пользователя, который забронировал
-        public User User { get; set; }
+        public string Id { get; set; } = Guid.NewGuid().ToString();
 
-        public string? CoachId { get; set; } // ID тренера (если бронируется тренер)
-        public Coach Coach { get; set; }
+        public string UserId { get; set; } = null!;
+        public User?  User   { get; set; }   // в†ђ nullable
 
-        public string? SportFacilityId { get; set; } // ID площадки (если бронируется площадка)
-        public SportFacility SportFacility { get; set; }
+        public string? CoachId { get; set; }
+        public Coach?  Coach   { get; set; } // в†ђ nullable
 
-        public DateTime BookingDate { get; set; } // Дата бронирования
-        public TimeSpan StartTime { get; set; }   // Время начала
-        public TimeSpan EndTime { get; set; }     // Время окончания
+        public string? SportFacilityId { get; set; }
+        public SportFacility? SportFacility { get; set; } // в†ђ nullable
+
+        public DateTime BookingDate { get; set; }
+        public TimeSpan StartTime  { get; set; }
+        public TimeSpan EndTime    { get; set; }
     }
 }
-

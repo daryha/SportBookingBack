@@ -1,92 +1,72 @@
+// Controllers/CoachController.cs
 using BookingSports.Models;
 using BookingSports.Services;
-using Microsoft.AspNetCore.Mvc;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using OfficeOpenXml;
 using System.Security.Claims;
-using BookingSports.Data;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-
 
 namespace BookingSports.Controllers
 {
     [Authorize(Roles = "Coach")]
     [Route("api/coach")]
+    [ApiController]
     public class CoachController : ControllerBase
     {
-        private readonly ApplicationDbContext _context;
-        private readonly UserManager<User> _userManager;
+        private readonly ICoachService _svc;
 
-        public CoachController(ApplicationDbContext context, UserManager<User> userManager)
+        public CoachController(ICoachService svc)
         {
-            _context = context;
-            _userManager = userManager;
+            _svc = svc;
+            ExcelPackage.LicenseContext = LicenseContext.NonCommercial;
         }
 
-        // Логика для обновления информации о тренере
+        // PUT: api/coach/update
         [HttpPut("update")]
         public async Task<IActionResult> UpdateCoachInfo([FromBody] Coach model)
         {
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            var user = await _userManager.FindByIdAsync(userId);
-
-            if (user == null)
-                return NotFound();
-
-            // Обновление информации о тренере
-            return Ok(new { message = "Информация обновлена" });
+            // РїСЂРµРґРїРѕР»Р°РіР°РµРј, С‡С‚Рѕ Coach.Id == userId
+            var updated = await _svc.UpdateCoachAsync(userId!, model);
+            if (updated == null) return NotFound();
+            return Ok(updated);
         }
 
-        // Логика для выгрузки расписания тренера в Excel
+        // GET: api/coach/{coachId}/schedule/excel
         [HttpGet("{coachId}/schedule/excel")]
         public async Task<IActionResult> ExportCoachScheduleToExcel(string coachId)
         {
-            // Получаем данные расписания для конкретного тренера
-            var coach = await _context.Coaches
-                .Include(c => c.Schedules)
-                    .ThenInclude(s => s.SportFacility) // Включаем связанные спортивные площадки
-                .FirstOrDefaultAsync(c => c.Id == coachId);
+            var coach = await _svc.GetCoachByIdAsync(coachId);
+            if (coach == null) return NotFound();
 
-            if (coach == null)
-                return NotFound("Тренер не найден.");
+            using var package = new ExcelPackage();
+            var ws = package.Workbook.Worksheets.Add("Schedule");
 
-            // Создаем новый Excel пакет
-            using (var package = new ExcelPackage())
+            // Header
+            ws.Cells[1,1].Value = "Coach Name";
+            ws.Cells[1,2].Value = "Facility";
+            ws.Cells[1,3].Value = "Date";
+            ws.Cells[1,4].Value = "Start";
+            ws.Cells[1,5].Value = "End";
+
+            int row = 2;
+            foreach (var s in coach.Schedules)
             {
-                // Добавляем рабочий лист
-                var worksheet = package.Workbook.Worksheets.Add("Coach Schedule");
-
-                // Заголовки столбцов
-                worksheet.Cells[1, 1].Value = "Coach Name";
-                worksheet.Cells[1, 2].Value = "Sport Facility";
-                worksheet.Cells[1, 3].Value = "Date";
-                worksheet.Cells[1, 4].Value = "Start Time";
-                worksheet.Cells[1, 5].Value = "End Time";
-
-                // Заполнение данных
-                int row = 2;
-                foreach (var schedule in coach.Schedules)
-                {
-                    worksheet.Cells[row, 1].Value = coach.FirstName + " " + coach.LastName;
-                    worksheet.Cells[row, 2].Value = schedule.SportFacility?.Name;
-                    worksheet.Cells[row, 3].Value = schedule.Date.ToString("yyyy-MM-dd");
-                    worksheet.Cells[row, 4].Value = schedule.StartTime.ToString(@"hh\:mm");
-                    worksheet.Cells[row, 5].Value = schedule.EndTime.ToString(@"hh\:mm");
-                    row++;
-                }
-
-                // Устанавливаем авторазмер для всех столбцов
-                worksheet.Cells[worksheet.Dimension.Address].AutoFitColumns();
-
-                // Генерируем файл в формате Excel
-                var fileContent = package.GetAsByteArray();
-
-                // Отправляем файл в ответе
-                return File(fileContent, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", $"{coach.FirstName}_{coach.LastName}_schedule.xlsx");
+                ws.Cells[row,1].Value = coach.FirstName + " " + coach.LastName;
+                ws.Cells[row,2].Value = s.SportFacility?.Name;
+                ws.Cells[row,3].Value = s.Date.ToString("yyyy-MM-dd");
+                ws.Cells[row,4].Value = s.StartTime.ToString(@"hh\:mm");
+                ws.Cells[row,5].Value = s.EndTime.ToString(@"hh\:mm");
+                row++;
             }
+
+            ws.Cells[ws.Dimension.Address].AutoFitColumns();
+
+            var bytes = package.GetAsByteArray();
+            var name  = $"{coach.FirstName}_{coach.LastName}_schedule.xlsx";
+            return File(bytes,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        name);
         }
     }
 }

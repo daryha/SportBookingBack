@@ -254,3 +254,4 @@ C:\www\Projects\BookingSports\obj\Debug\net8.0\refint\BookingSports.dll
 C:\www\Projects\BookingSports\obj\Debug\net8.0\BookingSports.pdb
 C:\www\Projects\BookingSports\obj\Debug\net8.0\BookingSports.genruntimeconfig.cache
 C:\www\Projects\BookingSports\obj\Debug\net8.0\ref\BookingSports.dll
+C:\www\Projects\BookingSports\obj\Debug\net8.0\BookingSports.sourcelink.json

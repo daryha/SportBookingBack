@@ -1,79 +1,59 @@
-using BookingSports.Models;
+// Services/ScheduleService.cs
 using BookingSports.Data;
+using BookingSports.Models;
 using Microsoft.EntityFrameworkCore;
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
 namespace BookingSports.Services
 {
-    public interface IScheduleService
-    {
-        Task<IEnumerable<Schedule>> GetAllSchedulesAsync();
-        Task<Schedule> GetScheduleByIdAsync(string id);
-        Task<Schedule> CreateScheduleAsync(Schedule schedule);
-        Task<Schedule> UpdateScheduleAsync(string id, Schedule schedule);
-        Task<bool> DeleteScheduleAsync(string id);
-    }
-
     public class ScheduleService : IScheduleService
     {
-        private readonly ApplicationDbContext _context;
+        private readonly ApplicationDbContext _db;
+        public ScheduleService(ApplicationDbContext db) => _db = db;
 
-        public ScheduleService(ApplicationDbContext context)
-        {
-            _context = context;
-        }
+        public async Task<IEnumerable<Schedule>> GetAllSchedulesAsync() =>
+            await _db.Schedules
+                     .Include(s => s.Coach)
+                     .Include(s => s.SportFacility)
+                     .ToListAsync();
 
-        // Получить все расписания
-        public async Task<IEnumerable<Schedule>> GetAllSchedulesAsync()
-        {
-            return await _context.Schedules.ToListAsync();
-        }
+        public async Task<Schedule?> GetScheduleByIdAsync(string id) =>
+            await _db.Schedules
+                     .Include(s => s.Coach)
+                     .Include(s => s.SportFacility)
+                     .FirstOrDefaultAsync(s => s.Id == id);
 
-        // Получить расписание по ID
-        public async Task<Schedule> GetScheduleByIdAsync(string id)
-        {
-            return await _context.Schedules.FindAsync(id);
-        }
-
-        // Создать новое расписание
         public async Task<Schedule> CreateScheduleAsync(Schedule schedule)
         {
-            _context.Schedules.Add(schedule);
-            await _context.SaveChangesAsync();
+            schedule.Id = Guid.NewGuid().ToString();
+            _db.Schedules.Add(schedule);
+            await _db.SaveChangesAsync();
             return schedule;
         }
 
-        // Обновить расписание
-        public async Task<Schedule> UpdateScheduleAsync(string id, Schedule schedule)
+        public async Task<Schedule?> UpdateScheduleAsync(string id, Schedule schedule)
         {
-            var existingSchedule = await _context.Schedules.FindAsync(id);
-            if (existingSchedule == null)
-            {
-                return null;
-            }
+            var existing = await _db.Schedules.FindAsync(id);
+            if (existing == null) return null;
 
-            existingSchedule.Date = schedule.Date;
-            existingSchedule.StartTime = schedule.StartTime;
-            existingSchedule.EndTime = schedule.EndTime;
-            existingSchedule.SportFacilityId = schedule.SportFacilityId;
+            existing.Date             = schedule.Date;
+            existing.StartTime        = schedule.StartTime;
+            existing.EndTime          = schedule.EndTime;
+            existing.CoachId          = schedule.CoachId;
+            existing.SportFacilityId  = schedule.SportFacilityId;
 
-            _context.Schedules.Update(existingSchedule);
-            await _context.SaveChangesAsync();
-            return existingSchedule;
+            await _db.SaveChangesAsync();
+            return existing;
         }
 
-        // Удалить расписание
         public async Task<bool> DeleteScheduleAsync(string id)
         {
-            var schedule = await _context.Schedules.FindAsync(id);
-            if (schedule == null)
-            {
-                return false;
-            }
-
-            _context.Schedules.Remove(schedule);
-            await _context.SaveChangesAsync();
+            var existing = await _db.Schedules.FindAsync(id);
+            if (existing == null) return false;
+            _db.Schedules.Remove(existing);
+            await _db.SaveChangesAsync();
             return true;
         }
     }

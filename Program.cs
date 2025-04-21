@@ -1,46 +1,84 @@
 using BookingSports.Data;
+using BookingSports.Models;
+using BookingSports.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
-using BookingSports.Models;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
-using BookingSports.Controllers;
-using BookingSports.Services;
+using System.Text.Json.Serialization;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Подключение к PostgreSQL
-var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
-builder.Services.AddDbContext<ApplicationDbContext>(options =>
-    options.UseNpgsql(connectionString));
+// CORS
+builder.Services.AddCors(o =>
+    o.AddPolicy("AllowAll", policy =>
+        policy.AllowAnyOrigin()
+              .AllowAnyMethod()
+              .AllowAnyHeader()));
 
-// Настройка Identity
-builder.Services.AddIdentity<User, IdentityRole>(options =>
-{
-    options.Password.RequireNonAlphanumeric = false;
-    options.Password.RequiredLength = 6;
-})
-.AddEntityFrameworkStores<ApplicationDbContext>()
-.AddDefaultTokenProviders();
+// EF Core + PostgreSQL
+builder.Services.AddDbContext<ApplicationDbContext>(o =>
+    o.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 
-// Настройка JWT
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
+// Identity
+builder.Services.AddIdentity<User, IdentityRole>(opts =>
     {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = builder.Configuration["Jwt:Issuer"],
-            ValidAudience = builder.Configuration["Jwt:Audience"],
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"] ?? "default_key"))
-        };
-    });
+        opts.Password.RequireNonAlphanumeric = false;
+        opts.Password.RequiredLength = 6;
+    })
+    .AddEntityFrameworkStores<ApplicationDbContext>()
+    .AddDefaultTokenProviders();
 
-builder.Services.AddControllers();
+// Если вы используете cookie‑аутентификацию в приложении и хотите, чтобы API не редиректилился на страницу логина:
+builder.Services.ConfigureApplicationCookie(options =>
+{
+    options.Events.OnRedirectToLogin = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            return Task.CompletedTask;
+        }
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
+    options.Events.OnRedirectToAccessDenied = context =>
+    {
+        if (context.Request.Path.StartsWithSegments("/api"))
+        {
+            context.Response.StatusCode = StatusCodes.Status403Forbidden;
+            return Task.CompletedTask;
+        }
+        context.Response.Redirect(context.RedirectUri);
+        return Task.CompletedTask;
+    };
+});
+
+// JWT Bearer аутентификация по‑умолчанию
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme    = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(opts =>
+{
+    opts.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer           = true,
+        ValidateAudience         = true,
+        ValidateLifetime         = true,
+        ValidateIssuerSigningKey = true,
+        ValidIssuer              = builder.Configuration["Jwt:Issuer"],
+        ValidAudience            = builder.Configuration["Jwt:Audience"],
+        IssuerSigningKey         = new SymmetricSecurityKey(
+                                       Encoding.UTF8.GetBytes(
+                                         builder.Configuration["Jwt:Key"]
+                                         ?? throw new InvalidOperationException("Jwt:Key missing")))
+    };
+});
+
+// Сервисы
 builder.Services.AddScoped<IUserService, UserService>();
 builder.Services.AddScoped<IFavoriteService, FavoriteService>();
 builder.Services.AddScoped<IScheduleService, ScheduleService>();
@@ -48,12 +86,30 @@ builder.Services.AddScoped<IBookingService, BookingService>();
 builder.Services.AddScoped<IReviewService, ReviewService>();
 builder.Services.AddScoped<ICoachService, CoachService>();
 builder.Services.AddScoped<ISportFacilityService, SportFacilityService>();
+
+// Контроллеры + JSON опции (игнорирование циклов)
+builder.Services
+    .AddControllers()
+    .AddJsonOptions(opts =>
+    {
+        opts.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+        opts.JsonSerializerOptions.WriteIndented     = true;
+    });
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
-
 var app = builder.Build();
 
+// Миграции и создание ролей
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    var rm = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
+    var um = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
+    db.Database.Migrate();
+    await CreateRolesAsync(rm, um);
+}
 
 if (app.Environment.IsDevelopment())
 {
@@ -61,50 +117,30 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-
-// ✅ Вот правильный способ создать роли
-using (var scope = app.Services.CreateScope())
-{
-    var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-    var userManager = scope.ServiceProvider.GetRequiredService<UserManager<User>>();
-    await CreateRoles(roleManager, userManager);
-}
-
-//app.UseHttpsRedirection();
+app.UseCors("AllowAll");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
-
 app.Run();
 
-// Отдельный метод создания ролей
-static async Task CreateRoles(RoleManager<IdentityRole> roleManager, UserManager<User> userManager)
+static async Task CreateRolesAsync(RoleManager<IdentityRole> roleManager, UserManager<User> userManager)
 {
-    string[] roleNames = { "Admin", "Coach", "SportFacility", "User" };
+    string[] roles = { "Admin", "Coach", "SportFacility", "User" };
+    foreach (var r in roles)
+        if (!await roleManager.RoleExistsAsync(r))
+            await roleManager.CreateAsync(new IdentityRole(r));
 
-    foreach (var roleName in roleNames)
+    if (await userManager.FindByEmailAsync("admin@example.com") == null)
     {
-        if (!await roleManager.RoleExistsAsync(roleName))
+        var admin = new User
         {
-            await roleManager.CreateAsync(new IdentityRole(roleName));
-        }
-    }
-
-    var adminUser = await userManager.FindByEmailAsync("admin@example.com");
-    if (adminUser == null)
-    {
-        var user = new User
-        {
-            UserName = "admin@example.com",
-            Email = "admin@example.com",
+            UserName  = "admin@example.com",
+            Email     = "admin@example.com",
             FirstName = "Admin",
-            LastName = "User",
-            City = "City"
+            LastName  = "User",
+            City      = "City"
         };
-        var result = await userManager.CreateAsync(user, "AdminPassword123");
-        if (result.Succeeded)
-        {
-            await userManager.AddToRoleAsync(user, "Admin");
-        }
+        if ((await userManager.CreateAsync(admin, "AdminPassword123")).Succeeded)
+            await userManager.AddToRoleAsync(admin, "Admin");
     }
 }

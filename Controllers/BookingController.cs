@@ -1,75 +1,118 @@
+// Controllers/BookingController.cs
 using BookingSports.Models;
 using BookingSports.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System;
 using System.Collections.Generic;
+using System.Security.Claims;
 using System.Threading.Tasks;
-using Microsoft.EntityFrameworkCore;
-using BookingSports.Data;
 
 namespace BookingSports.Controllers
 {
     [Route("api/booking")]
     [ApiController]
+    [Authorize]
     public class BookingController : ControllerBase
     {
         private readonly IBookingService _bookingService;
+        private readonly ICoachService   _coachService;
 
-        public BookingController(IBookingService bookingService)
+        public BookingController(IBookingService bookingService, ICoachService coachService)
         {
             _bookingService = bookingService;
+            _coachService   = coachService;
         }
 
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Booking>>> GetAllBookings()
-        {
-            var bookings = await _bookingService.GetAllBookingsAsync();
-            return Ok(bookings);
-        }
+        public async Task<ActionResult<IEnumerable<Booking>>> GetAllBookings() =>
+            Ok(await _bookingService.GetAllBookingsAsync());
 
         [HttpGet("{id}")]
         public async Task<ActionResult<Booking>> GetBookingById(string id)
         {
-            var booking = await _bookingService.GetBookingByIdAsync(id);
-            if (booking == null)
-            {
-                return NotFound();
-            }
-            return Ok(booking);
+            var b = await _bookingService.GetBookingByIdAsync(id);
+            return b == null ? NotFound() : Ok(b);
         }
 
-        [HttpPost]
-        public async Task<ActionResult<Booking>> CreateBooking(Booking booking)
+        [HttpGet("mine")]
+        public async Task<ActionResult<IEnumerable<Booking>>> GetMyBookings()
         {
-            var existingBooking = await _bookingService.GetBookingByFacilityAndTimeAsync(booking.SportFacilityId, booking.BookingDate);
-            if (existingBooking != null)
-            {
-                return Conflict(new { message = "Бронирование уже существует для данного времени." });
-            }
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (userId == null) return Unauthorized();
+            var mine = await _bookingService.GetBookingsForUserAsync(userId);
+            return Ok(mine);
+        }
 
-            var createdBooking = await _bookingService.CreateBookingAsync(booking);
-            return CreatedAtAction(nameof(GetBookingById), new { id = createdBooking.Id }, createdBooking);
+        [HttpPost("facility")]
+        public async Task<IActionResult> CreateFacilityBooking([FromBody] Booking model)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            model.UserId = userId;
+            if (string.IsNullOrEmpty(model.SportFacilityId))
+                return BadRequest(new { message = "sportFacilityId РѕР±СЏР·Р°С‚РµР»РµРЅ" });
+
+            model.BookingDate = DateTime.SpecifyKind(model.BookingDate, DateTimeKind.Utc);
+
+            var conflict = await _bookingService.GetBookingByFacilityAndTimeAsync(
+                model.SportFacilityId, model.BookingDate);
+            if (conflict != null)
+                return Conflict(new { message = "Р­С‚Рѕ РІСЂРµРјСЏ СѓР¶Рµ Р·Р°РЅСЏС‚Рѕ." });
+
+            var created = await _bookingService.CreateBookingAsync(model);
+            var full    = await _bookingService.GetBookingByIdAsync(created.Id);
+            return CreatedAtAction(nameof(GetBookingById), new { id = full!.Id }, full);
+        }
+
+        [HttpPost("coach")]
+        public async Task<IActionResult> CreateCoachBooking([FromBody] Booking model)
+        {
+            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier)!;
+            model.UserId = userId;
+            if (string.IsNullOrEmpty(model.CoachId))
+                return BadRequest(new { message = "coachId РѕР±СЏР·Р°С‚РµР»РµРЅ" });
+
+            model.BookingDate = DateTime.SpecifyKind(model.BookingDate, DateTimeKind.Utc);
+
+            var conflict = await _bookingService.GetBookingByCoachAndTimeAsync(
+                model.CoachId, model.BookingDate, model.StartTime);
+            if (conflict != null)
+                return Conflict(new { message = "Р­С‚Рѕ РІСЂРµРјСЏ СѓР¶Рµ Р·Р°РЅСЏС‚Рѕ Сѓ СЌС‚РѕРіРѕ С‚СЂРµРЅРµСЂР°." });
+
+            var created = await _bookingService.CreateBookingAsync(model);
+            var full    = await _bookingService.GetBookingByIdAsync(created.Id);
+
+            var coach = await _coachService.GetCoachByIdAsync(model.CoachId);
+            if (coach == null)
+                return CreatedAtAction(nameof(GetBookingById), new { id = full!.Id }, full);
+
+            return CreatedAtAction(
+                nameof(GetBookingById),
+                new { id = full!.Id },
+                new {
+                  booking       = full,
+                  coachContacts = new {
+                    coach.Phone,
+                    coach.Telegram,
+                    coach.WhatsApp
+                  }
+                }
+            );
         }
 
         [HttpPut("{id}")]
-        public async Task<ActionResult<Booking>> UpdateBooking(string id, Booking booking)
+        public async Task<ActionResult<Booking>> UpdateBooking(
+            string id,
+            [FromBody] Booking model)
         {
-            var updatedBooking = await _bookingService.UpdateBookingAsync(id, booking);
-            if (updatedBooking == null)
-            {
-                return NotFound();
-            }
-            return Ok(updatedBooking);
+            var updated = await _bookingService.UpdateBookingAsync(id, model);
+            return updated == null ? NotFound() : Ok(updated);
         }
 
         [HttpDelete("{id}")]
-        public async Task<ActionResult> DeleteBooking(string id)
-        {
-            var success = await _bookingService.DeleteBookingAsync(id);
-            if (!success)
-            {
-                return NotFound();
-            }
-            return NoContent();
-        }
+        public async Task<IActionResult> DeleteBooking(string id) =>
+            await _bookingService.DeleteBookingAsync(id)
+              ? NoContent()
+              : NotFound();
     }
 }

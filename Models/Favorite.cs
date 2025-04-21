@@ -1,18 +1,24 @@
-using BookingSports.Models;
+using System.Text.Json.Serialization;  // в†ђ РґР»СЏ [JsonIgnore]
 
 namespace BookingSports.Models
 {
     public class Favorite
     {
-        public string Id { get; set; }
+        public string Id { get; set; } = Guid.NewGuid().ToString();
 
-        public string UserId { get; set; } // ID пользователя
-        public User User { get; set; }
+        // РЎРѕС…СЂР°РЅСЏРµРј С‚РѕР»СЊРєРѕ СЃСЃС‹Р»РєСѓ
+        public string UserId { get; set; } = null!;
 
-        public string? CoachId { get; set; } // ID тренера (если в избранном тренер)
-        public Coach Coach { get; set; }
+        // РќР°РІРёРіР°С†РёРѕРЅРЅС‹Р№ РѕР±СЉРµРєС‚ вЂ” РёРіРЅРѕСЂРёСЂСѓРµРј
+        [JsonIgnore]
+        public User? User { get; set; }
 
-        public string? SportFacilityId { get; set; } // ID площадки (если в избранном площадка)
-        public SportFacility SportFacility { get; set; }
+        public string? CoachId { get; set; }
+        [JsonIgnore]
+        public Coach? Coach { get; set; }
+
+        public string? SportFacilityId { get; set; }
+        [JsonIgnore]
+        public SportFacility? SportFacility { get; set; }
     }
 }

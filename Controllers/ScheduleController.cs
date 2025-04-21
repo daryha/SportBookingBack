@@ -1,3 +1,4 @@
+// Controllers/ScheduleController.cs
 using BookingSports.Models;
 using BookingSports.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -10,63 +11,36 @@ namespace BookingSports.Controllers
     [ApiController]
     public class ScheduleController : ControllerBase
     {
-        private readonly IScheduleService _scheduleService;
+        private readonly IScheduleService _svc;
+        public ScheduleController(IScheduleService svc) => _svc = svc;
 
-        public ScheduleController(IScheduleService scheduleService)
-        {
-            _scheduleService = scheduleService;
-        }
-
-        // Получить все расписания
         [HttpGet]
-        public async Task<ActionResult<IEnumerable<Schedule>>> GetSchedules()
-        {
-            var schedules = await _scheduleService.GetAllSchedulesAsync();
-            return Ok(schedules);
-        }
+        public async Task<ActionResult<IEnumerable<Schedule>>> GetAll() =>
+            Ok(await _svc.GetAllSchedulesAsync());
 
-        // Получить расписание по ID
         [HttpGet("{id}")]
-        public async Task<ActionResult<Schedule>> GetScheduleById(string id)
+        public async Task<ActionResult<Schedule>> GetById(string id)
         {
-            var schedule = await _scheduleService.GetScheduleByIdAsync(id);
-            if (schedule == null)
-            {
-                return NotFound();
-            }
-            return Ok(schedule);
+            var s = await _svc.GetScheduleByIdAsync(id);
+            return s == null ? NotFound() : Ok(s);
         }
 
-        // Создать новое расписание
         [HttpPost]
-        public async Task<ActionResult<Schedule>> CreateSchedule(Schedule schedule)
+        public async Task<ActionResult<Schedule>> Create([FromBody] Schedule model)
         {
-            var createdSchedule = await _scheduleService.CreateScheduleAsync(schedule);
-            return CreatedAtAction(nameof(GetScheduleById), new { id = createdSchedule.Id }, createdSchedule);
+            var created = await _svc.CreateScheduleAsync(model);
+            return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
         }
 
-        // Обновить расписание
         [HttpPut("{id}")]
-        public async Task<ActionResult<Schedule>> UpdateSchedule(string id, Schedule schedule)
+        public async Task<ActionResult<Schedule>> Update(string id, [FromBody] Schedule model)
         {
-            var updatedSchedule = await _scheduleService.UpdateScheduleAsync(id, schedule);
-            if (updatedSchedule == null)
-            {
-                return NotFound();
-            }
-            return Ok(updatedSchedule);
+            var updated = await _svc.UpdateScheduleAsync(id, model);
+            return updated == null ? NotFound() : Ok(updated);
         }
 
-        // Удалить расписание
         [HttpDelete("{id}")]
-        public async Task<ActionResult> DeleteSchedule(string id)
-        {
-            var success = await _scheduleService.DeleteScheduleAsync(id);
-            if (!success)
-            {
-                return NotFound();
-            }
-            return NoContent();
-        }
+        public async Task<IActionResult> Delete(string id) =>
+            await _svc.DeleteScheduleAsync(id) ? NoContent() : NotFound();
     }
 }
